@@ -26,12 +26,18 @@ export class WebGLFallback {
       antialias: false,
       alpha: false,
       premultipliedAlpha: false,
+      powerPreference: 'high-performance',
     });
     if (!this.gl) throw new Error('No WebGL2');
 
     const gl = this.gl;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // additive
+
+    // Detect iOS Safari point size limit
+    const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+    this.maxPointSize = range ? range[1] : 64;
+    console.log('Max point size:', this.maxPointSize);
 
     this._initParticles();
     this._createPrograms();
@@ -181,9 +187,12 @@ export class WebGLFallback {
     const w = this.canvas.width || 1;
     const h = this.canvas.height || 1;
 
-    // Try to enable half-float rendering
-    gl.getExtension('EXT_color_buffer_half_float');
-    gl.getExtension('EXT_color_buffer_float');
+    // Cap FBO size to prevent iOS memory issues (max 2048 on any dimension)
+    const maxDim = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), 2048);
+    const fboW = Math.min(w, maxDim);
+    const fboH = Math.min(h, maxDim);
+    this.fboWidth = fboW;
+    this.fboHeight = fboH;
 
     // Clean up old FBO
     if (this.fboTexture) gl.deleteTexture(this.fboTexture);
@@ -192,16 +201,9 @@ export class WebGLFallback {
     this.fboTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.fboTexture);
 
-    // Try RGBA16F, fallback to RGBA8
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    const testFbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, testFbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.fboTexture, 0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-      // Fallback to RGBA8
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    }
-    gl.deleteFramebuffer(testFbo);
+    // Use RGBA8 directly — RGBA16F is unsupported on iOS Safari
+    // and the visual difference is negligible for additive blending
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, fboW, fboH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -211,6 +213,12 @@ export class WebGLFallback {
     this.fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.fboTexture, 0);
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      console.error('FBO incomplete:', status);
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -307,9 +315,11 @@ export class WebGLFallback {
       }
     }
 
-    // Pass 1: Render particles to FBO
+    // Pass 1: Render particles to FBO (may be smaller than canvas on iOS)
+    const fboW = this.fboWidth || w;
+    const fboH = this.fboHeight || h;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-    gl.viewport(0, 0, w, h);
+    gl.viewport(0, 0, fboW, fboH);
     gl.clearColor(0.008, 0.008, 0.02, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
@@ -320,9 +330,9 @@ export class WebGLFallback {
     const vpLoc = gl.getUniformLocation(this.program, 'u_viewProj');
     gl.uniformMatrix4fv(vpLoc, false, vp);
     const psLoc = gl.getUniformLocation(this.program, 'u_pointSize');
-    // Scale point size with canvas height (DPR-aware, looks good on Retina + desktop)
-    const baseSize = Math.min(h, 1440) * 0.1;
-    gl.uniform1f(psLoc, baseSize);
+    // Scale point size with canvas height, clamped to device max (iOS caps at ~63px)
+    const desiredSize = Math.min(h, 1440) * 0.1;
+    gl.uniform1f(psLoc, Math.min(desiredSize, this.maxPointSize * 0.9));
 
     const posLoc = gl.getAttribLocation(this.program, 'a_position');
     gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
@@ -351,7 +361,7 @@ export class WebGLFallback {
     gl.bindTexture(gl.TEXTURE_2D, this.fboTexture);
     gl.uniform1i(gl.getUniformLocation(this.blurProgram, 'u_tex'), 0);
     gl.uniform2f(gl.getUniformLocation(this.blurProgram, 'u_dir'), 2.0, 2.0);
-    gl.uniform2f(gl.getUniformLocation(this.blurProgram, 'u_resolution'), w, h);
+    gl.uniform2f(gl.getUniformLocation(this.blurProgram, 'u_resolution'), fboW, fboH);
 
     const qLoc = gl.getAttribLocation(this.blurProgram, 'a_pos');
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);

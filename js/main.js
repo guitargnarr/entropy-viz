@@ -66,6 +66,18 @@ async function main() {
 
   ui.hideLoading();
 
+  // Handle WebGL context loss (common on iOS Safari)
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    console.warn('WebGL context lost');
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    console.log('WebGL context restored, reinitializing...');
+    if (!useWebGPU && renderer) {
+      renderer.init().catch(err => console.error('Reinit failed:', err));
+    }
+  });
+
   // Events
   window.addEventListener('resize', resize);
 
