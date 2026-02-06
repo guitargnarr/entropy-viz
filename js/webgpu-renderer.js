@@ -73,12 +73,9 @@ export class WebGPURenderer {
     });
     if (!adapter) throw new Error('No WebGPU adapter');
 
-    this.device = await adapter.requestDevice({
-      requiredLimits: {
-        maxStorageBufferBindingSize: 268435456,
-        maxBufferSize: 268435456,
-      }
-    });
+    // Request device with minimal limits (actual max buffer ~1MB)
+    // Requesting 256MB caused failures on iOS Safari Metal backend
+    this.device = await adapter.requestDevice();
 
     this.context = this.canvas.getContext('webgpu');
     this.format = navigator.gpu.getPreferredCanvasFormat();
