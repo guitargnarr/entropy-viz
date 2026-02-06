@@ -61,9 +61,19 @@ async function main() {
     }
   }
 
-  // Detect WebGPU
+  // Detect WebGPU — but skip on iOS Safari (Metal backend has compatibility issues
+  // with atomic storage buffers, 1D textures, and density-splat shader patterns)
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  dbg(`iOS: ${isIOS} | Safari: ${isSafari}`);
+
+  if (isIOS) {
+    dbg('iOS detected — forcing WebGL2 (WebGPU Metal compat issues)');
+  }
+
   try {
-    if (navigator.gpu) {
+    if (navigator.gpu && !isIOS) {
       dbg('Requesting GPU adapter...');
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {
@@ -72,6 +82,8 @@ async function main() {
       } else {
         dbg('GPU adapter null');
       }
+    } else if (navigator.gpu && isIOS) {
+      dbg('WebGPU available but skipped on iOS');
     }
   } catch (e) {
     dbg('WebGPU fail: ' + e.message);
