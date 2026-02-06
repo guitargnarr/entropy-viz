@@ -1,4 +1,5 @@
 // Bin particle speeds into 64 histogram buckets for Shannon entropy.
+// Histogram must be cleared before this dispatch (done by histogram-clear pass).
 
 struct Particle {
   position: vec3<f32>,
@@ -24,12 +25,6 @@ struct HistUniforms {
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
   if (idx >= uniforms.particle_count) { return; }
-
-  // First pass: clear histogram (only first N threads)
-  if (idx < uniforms.num_bins) {
-    atomicStore(&histogram[idx], 0u);
-  }
-  workgroupBarrier();
 
   let speed = particles[idx].speed;
   let normalized = clamp(speed / uniforms.max_speed, 0.0, 0.9999);

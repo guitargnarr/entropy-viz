@@ -41,6 +41,7 @@ export class WebGPURenderer {
     this.physicsPipeline = null;
     this.densityClearPipeline = null;
     this.densitySplatPipeline = null;
+    this.histogramClearPipeline = null;
     this.histogramPipeline = null;
     this.renderPipeline = null;
 
@@ -48,6 +49,7 @@ export class WebGPURenderer {
     this.physicsBindGroup = null;
     this.densityClearBindGroup = null;
     this.densitySplatBindGroup = null;
+    this.histogramClearBindGroup = null;
     this.histogramBindGroup = null;
     this.renderBindGroup = null;
 
@@ -240,11 +242,12 @@ export class WebGPURenderer {
     const d = this.device;
 
     // Load all shaders in parallel
-    const [physicsSrc, densityClearSrc, densitySplatSrc, histogramSrc, quadSrc, raymarchSrc] =
+    const [physicsSrc, densityClearSrc, densitySplatSrc, histClearSrc, histogramSrc, quadSrc, raymarchSrc] =
       await Promise.all([
         this._loadShader('shaders/physics.wgsl'),
         this._loadShader('shaders/density-clear.wgsl'),
         this._loadShader('shaders/density-splat.wgsl'),
+        this._loadShader('shaders/histogram-clear.wgsl'),
         this._loadShader('shaders/histogram.wgsl'),
         this._loadShader('shaders/fullscreen-quad.wgsl'),
         this._loadShader('shaders/raymarch.wgsl'),
@@ -273,6 +276,15 @@ export class WebGPURenderer {
       layout: 'auto',
       compute: {
         module: d.createShaderModule({ code: densitySplatSrc }),
+        entryPoint: 'main',
+      },
+    });
+
+    // ── Histogram clear pipeline ──
+    this.histogramClearPipeline = d.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: d.createShaderModule({ code: histClearSrc }),
         entryPoint: 'main',
       },
     });
@@ -332,6 +344,14 @@ export class WebGPURenderer {
         { binding: 0, resource: { buffer: this.particleBuffer } },
         { binding: 1, resource: { buffer: this.densityBuffer } },
         { binding: 2, resource: { buffer: this.densityUniformBuffer } },
+      ],
+    });
+
+    // Histogram clear bind group
+    this.histogramClearBindGroup = d.createBindGroup({
+      layout: this.histogramClearPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.histogramBuffer } },
       ],
     });
 
@@ -466,7 +486,14 @@ export class WebGPURenderer {
     // 4. Copy density buffer to read buffer (atomic -> non-atomic)
     encoder.copyBufferToBuffer(this.densityBuffer, 0, this.densityReadBuffer, 0, GRID_VOXELS * 4);
 
-    // 5. Histogram
+    // 5. Clear histogram
+    const histClearPass = encoder.beginComputePass();
+    histClearPass.setPipeline(this.histogramClearPipeline);
+    histClearPass.setBindGroup(0, this.histogramClearBindGroup);
+    histClearPass.dispatchWorkgroups(1); // 64 threads in 1 workgroup
+    histClearPass.end();
+
+    // 6. Histogram binning
     const histPass = encoder.beginComputePass();
     histPass.setPipeline(this.histogramPipeline);
     histPass.setBindGroup(0, this.histogramBindGroup);
