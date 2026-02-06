@@ -165,20 +165,29 @@ export class WebGLFallback {
     gl.shaderSource(vs, vsrc);
     gl.compileShader(vs);
     if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
-      console.error('VS:', gl.getShaderInfoLog(vs));
+      const err = gl.getShaderInfoLog(vs);
+      console.error('VS:', err);
+      throw new Error('VS compile: ' + err.slice(0, 100));
     }
 
     const fs = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fs, fsrc);
     gl.compileShader(fs);
     if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-      console.error('FS:', gl.getShaderInfoLog(fs));
+      const err = gl.getShaderInfoLog(fs);
+      console.error('FS:', err);
+      throw new Error('FS compile: ' + err.slice(0, 100));
     }
 
     const prog = gl.createProgram();
     gl.attachShader(prog, vs);
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      const err = gl.getProgramInfoLog(prog);
+      console.error('Link:', err);
+      throw new Error('Link: ' + err.slice(0, 100));
+    }
     return prog;
   }
 

@@ -9,7 +9,37 @@ import { EntropyCalculator } from './entropy-calculator.js';
 import { Camera } from './camera.js';
 import { UI } from './ui.js';
 
+// Debug overlay for mobile (shows errors on-screen)
+const debugLines = [];
+function dbg(msg) {
+  console.log(msg);
+  debugLines.push(msg);
+  const el = document.getElementById('debug-overlay');
+  if (el) el.textContent = debugLines.slice(-15).join('\n');
+}
+
+// Create debug overlay element
+function createDebugOverlay() {
+  const el = document.createElement('div');
+  el.id = 'debug-overlay';
+  el.style.cssText = 'position:fixed;top:80px;right:8px;z-index:9999;font:10px/1.4 monospace;color:#f97316;background:rgba(0,0,0,0.85);padding:8px;border-radius:4px;max-width:55%;word-break:break-all;pointer-events:none;white-space:pre-wrap;';
+  document.body.appendChild(el);
+}
+
+// Capture all errors
+window.onerror = (msg, src, line, col, err) => {
+  dbg(`ERR: ${msg} @${line}:${col}`);
+};
+window.addEventListener('unhandledrejection', (e) => {
+  dbg(`REJECT: ${e.reason}`);
+});
+
 async function main() {
+  createDebugOverlay();
+  dbg(`UA: ${navigator.userAgent.slice(0, 80)}`);
+  dbg(`DPR: ${window.devicePixelRatio} | ${window.innerWidth}x${window.innerHeight}`);
+  dbg(`WebGPU: ${!!navigator.gpu}`);
+
   const canvas = document.getElementById('canvas');
   const ui = new UI();
   const stateMachine = new StateMachine();
@@ -34,47 +64,62 @@ async function main() {
   // Detect WebGPU
   try {
     if (navigator.gpu) {
+      dbg('Requesting GPU adapter...');
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {
         useWebGPU = true;
+        dbg('GPU adapter OK');
+      } else {
+        dbg('GPU adapter null');
       }
     }
   } catch (e) {
-    console.log('WebGPU not available, falling back to WebGL2');
+    dbg('WebGPU fail: ' + e.message);
   }
 
   resize();
+  dbg(`Canvas: ${canvas.width}x${canvas.height}`);
 
   // Init renderer
   try {
     if (useWebGPU) {
+      dbg('Init WebGPU renderer...');
       renderer = new WebGPURenderer(canvas);
       await renderer.init();
       ui.setRenderer('WebGPU');
-      console.log('Using WebGPU');
+      dbg('WebGPU OK');
     } else {
       throw new Error('Use WebGL2');
     }
   } catch (e) {
-    console.log('WebGPU init failed, using WebGL2:', e.message);
+    dbg('Trying WebGL2: ' + e.message);
     useWebGPU = false;
-    renderer = new WebGLFallback(canvas);
-    await renderer.init();
-    ui.setRenderer('WebGL2');
-    console.log('Using WebGL2');
+    try {
+      renderer = new WebGLFallback(canvas);
+      await renderer.init();
+      dbg('GL ctx: ' + (renderer.gl ? 'OK' : 'NULL'));
+      dbg('MaxPtSize: ' + renderer.maxPointSize);
+      dbg('FBO: ' + renderer.fboWidth + 'x' + renderer.fboHeight);
+      ui.setRenderer('WebGL2');
+      dbg('WebGL2 init OK');
+    } catch (e2) {
+      dbg('WebGL2 FAIL: ' + e2.message + ' | ' + e2.stack?.split('\n')[1]);
+      throw e2;
+    }
   }
 
   ui.hideLoading();
+  dbg('Loading hidden, starting RAF');
 
   // Handle WebGL context loss (common on iOS Safari)
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
-    console.warn('WebGL context lost');
+    dbg('CONTEXT LOST');
   });
   canvas.addEventListener('webglcontextrestored', () => {
-    console.log('WebGL context restored, reinitializing...');
+    dbg('CONTEXT RESTORED');
     if (!useWebGPU && renderer) {
-      renderer.init().catch(err => console.error('Reinit failed:', err));
+      renderer.init().catch(err => dbg('Reinit fail: ' + err.message));
     }
   });
 
@@ -84,6 +129,7 @@ async function main() {
   canvas.addEventListener('click', () => {
     if (stateMachine.canClick) {
       stateMachine.click();
+      dbg('Click -> ' + stateMachine.state);
     }
   });
 
@@ -92,6 +138,7 @@ async function main() {
     e.preventDefault();
     if (stateMachine.canClick) {
       stateMachine.click();
+      dbg('Tap -> ' + stateMachine.state);
     }
   }, { passive: false });
 
@@ -110,6 +157,7 @@ async function main() {
   // RAF loop
   let lastTime = performance.now();
   let totalTime = 0;
+  let frameCount = 0;
 
   function frame(now) {
     requestAnimationFrame(frame);
@@ -127,7 +175,14 @@ async function main() {
     camera.update(dt);
 
     // Render frame
-    renderer.frame(dt, stateMachine.tOrder, totalTime, camera);
+    try {
+      renderer.frame(dt, stateMachine.tOrder, totalTime, camera);
+    } catch (e) {
+      if (frameCount < 3) dbg('Frame err: ' + e.message);
+    }
+
+    frameCount++;
+    if (frameCount === 5) dbg('Rendering (5 frames OK)');
 
     // Read histogram and compute entropy
     const hist = renderer.getHistogram();
@@ -144,7 +199,7 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Fatal:', err);
+  dbg('FATAL: ' + err.message);
   const loading = document.getElementById('loading-text');
   if (loading) {
     loading.textContent = 'Error: ' + err.message;
