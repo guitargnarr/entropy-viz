@@ -515,30 +515,26 @@ export class WebGPURenderer {
     renderPass.draw(3); // fullscreen triangle
     renderPass.end();
 
-    // 7. Copy histogram to readback (double-buffered)
-    const rbIdx = this.currentReadback;
-    encoder.copyBufferToBuffer(this.histogramBuffer, 0, this.histReadbackBuffers[rbIdx], 0, HIST_BINS * 4);
-
     d.queue.submit([encoder.finish()]);
 
-    // 8. Async readback of PREVIOUS frame's histogram
-    this._readHistogram();
-    this.currentReadback = 1 - this.currentReadback;
-  }
+    // 7. Copy histogram to readback in SEPARATE submit (so render isn't affected)
+    const rbIdx = this.currentReadback;
+    const rbBuf = this.histReadbackBuffers[rbIdx];
+    if (rbBuf.mapState === 'unmapped') {
+      const copyEncoder = d.createCommandEncoder();
+      copyEncoder.copyBufferToBuffer(this.histogramBuffer, 0, rbBuf, 0, HIST_BINS * 4);
+      d.queue.submit([copyEncoder.finish()]);
 
-  async _readHistogram() {
-    const rbIdx = 1 - this.currentReadback; // read the OTHER buffer
-    const buf = this.histReadbackBuffers[rbIdx];
-
-    if (buf.mapState === 'unmapped') {
-      try {
-        await buf.mapAsync(GPUMapMode.READ);
-        const data = new Uint32Array(buf.getMappedRange().slice(0));
-        buf.unmap();
+      // 8. Async readback of this buffer
+      rbBuf.mapAsync(GPUMapMode.READ).then(() => {
+        const data = new Uint32Array(rbBuf.getMappedRange().slice(0));
+        rbBuf.unmap();
         this.pendingHistogram = data;
-      } catch (e) {
-        // Buffer busy, skip this frame
-      }
+      }).catch(() => {
+        // Buffer busy, skip
+      });
+
+      this.currentReadback = 1 - this.currentReadback;
     }
   }
 
