@@ -320,7 +320,9 @@ export class WebGLFallback {
     const vpLoc = gl.getUniformLocation(this.program, 'u_viewProj');
     gl.uniformMatrix4fv(vpLoc, false, vp);
     const psLoc = gl.getUniformLocation(this.program, 'u_pointSize');
-    gl.uniform1f(psLoc, 140.0);
+    // Scale point size with canvas height (DPR-aware, looks good on Retina + desktop)
+    const baseSize = Math.min(h, 1440) * 0.1;
+    gl.uniform1f(psLoc, baseSize);
 
     const posLoc = gl.getAttribLocation(this.program, 'a_position');
     gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);

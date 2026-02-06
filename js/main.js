@@ -75,13 +75,18 @@ async function main() {
     }
   });
 
-  // Touch support
+  // Touch support (passive: false required for iOS preventDefault)
   canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
     if (stateMachine.canClick) {
       stateMachine.click();
     }
-  });
+  }, { passive: false });
+
+  // Prevent iOS elastic scroll / pull-to-refresh on canvas
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+  }, { passive: false });
 
   // Mouse parallax
   window.addEventListener('mousemove', (e) => {

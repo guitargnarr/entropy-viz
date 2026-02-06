@@ -7,6 +7,7 @@ import { mat4LookAt } from './math-utils.js';
 
 export class Camera {
   constructor() {
+    this.baseRadius = 8.0;
     this.radius = 8.0;
     this.theta = 0;           // horizontal angle
     this.phi = 0.3;           // vertical angle (slight elevation)
@@ -21,6 +22,19 @@ export class Camera {
 
     this.eye = [0, 0, this.radius];
     this.viewMatrix = new Float32Array(16);
+
+    // Adapt for portrait aspect ratios (phones)
+    this.updateAspect();
+    window.addEventListener('resize', () => this.updateAspect());
+  }
+
+  updateAspect() {
+    const aspect = window.innerWidth / window.innerHeight;
+    // Portrait (< 1.0): pull camera back so lattice fits
+    // The narrower the viewport, the farther back we go
+    this.radius = aspect < 1.0
+      ? this.baseRadius * (1.0 + (1.0 - aspect) * 0.8)
+      : this.baseRadius;
   }
 
   onMouseMove(nx, ny) {
