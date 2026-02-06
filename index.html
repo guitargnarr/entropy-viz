@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entropy Visualization</title>
+  <meta name="description" content="Interactive WebGPU entropy visualization. Order requires energy. Chaos is free.">
+  <meta property="og:title" content="Entropy Visualization">
+  <meta property="og:description" content="2048 particles in a crystal lattice. Click to shatter into chaos. Click to reassemble. Shannon entropy in real-time.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loading">
+    <div id="loading-spinner"></div>
+    <div id="loading-text">Compiling shaders</div>
+  </div>
+
+  <!-- WebGPU / WebGL canvas -->
+  <canvas id="canvas"></canvas>
+
+  <!-- UI overlay -->
+  <div id="overlay">
+    <!-- Entropy display -->
+    <div id="entropy-panel">
+      <div id="entropy-label">Shannon Entropy</div>
+      <div>
+        <span id="entropy-value">0.0000</span>
+        <span id="entropy-unit">bits</span>
+      </div>
+      <div id="entropy-bar-track">
+        <div id="entropy-bar-fill"></div>
+      </div>
+    </div>
+
+    <!-- State label -->
+    <div id="state-label">ORDER</div>
+
+    <!-- Click instruction -->
+    <div id="click-instruction">click to shatter</div>
+
+    <!-- Renderer badge -->
+    <div id="renderer-badge">WebGPU</div>
+
+    <!-- Caption -->
+    <div id="caption">"Order requires energy. Chaos is free."</div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
